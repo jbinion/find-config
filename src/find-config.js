@@ -1,140 +1,132 @@
-'use strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import {homedir} from 'node:os';
+import {createRequire} from 'node:module';
 
-var fs = require('fs');
-var path = require('path');
-var home = require('user-home');
+const require = createRequire(import.meta.url);
 
-var fsReadFileSync = fs.readFileSync;
-var fsStatSync = fs.statSync;
-var pathJoin = path.join;
-var pathResolve = path.resolve;
+const DEFAULT_DIR = '.config';
+const DEFAULT_ENC = 'utf8';
 
-var DEFAULT_DIR = '.config';
-var DEFAULT_ENC = 'utf8';
-var LEADING_DOT = /^\./;
-var PATH_SEP = path.sep;
+/**
+ * Check if a normal file exists and return its path.
+ */
+function resolveFile(dir, filename) {
+	const filepath = path.join(dir, filename);
+	const stat = fs.statSync(filepath);
+	if (stat.isFile()) {
+		return filepath;
+	}
 
-// Does X/file.ext exist?
-// Else, throw
-function resolveFile(cwd, dir, filename) {
-	dir = pathJoin(cwd, dir);
-
-	var filepath = pathJoin(dir, filename);
-	var stat = fsStatSync(filepath);
-
-	return stat && {
-		cwd: cwd,
-		dir: dir,
-		path: filepath
-	};
+	return null;
 }
 
-// Does X/file.ext exist?
-// Does X/file.ext.js exist?
-// Does X/file.ext/index.js exist?
-// Else, throw
-function resolveModule(cwd, dir, filename) {
-	dir = pathJoin(cwd, dir);
-
-	var filepath = pathJoin(dir, filename);
-	var resolved = require.resolve(filepath);
-
-	return resolved && {
-		cwd: cwd,
-		dir: dir,
-		path: resolved
-	};
+/**
+ * Resolve using Node module resolution.
+ * This will handle file.js, file/index.js, etc.
+ */
+function resolveModule(dir, filename) {
+	return require.resolve(path.join(dir, filename));
 }
 
-function findConfig(filename, options) {
-	var config = findConfigObj(filename, options);
-
-	return config && config.path;
-}
-
-function findConfigObj(filename, options) {
+/**
+ * Core function to find a config file.
+ */
+function findConfigObject(filename, options = {}) {
 	if (!filename) {
 		return null;
 	}
 
-	options = options || {};
+	const dirName = options.dir ?? DEFAULT_DIR;
+	const dotless = options.dot ? filename : filename.replace(/^\./, '');
+	const resolver = options.module ? resolveModule : resolveFile;
 
-	var fileObj;
-	var dir = options.dir !== null && options.dir !== undefined ? options.dir : DEFAULT_DIR;
-	var dotless = options.dot ? filename : filename.replace(LEADING_DOT, '');
-	var resolve = options.module ? resolveModule : resolveFile;
-	var cwd = pathResolve(options.cwd || '.').split(PATH_SEP);
-	var i = cwd.length;
+	// Start at cwd or default to process.cwd()
+	let current = path.resolve(options.cwd ?? '.');
 
-	function test(x) {
-		// Does X/file.ext exist?
+	const test = (dir) => {
+		// 1️⃣ Direct file
 		try {
-			return resolve(x, '', filename);
-		} catch (e) {
+			const file = resolver(dir, filename);
+			if (file) return {cwd: current, dir, path: file};
+		} catch {}
+
+		// 2️⃣ Inside dot-directory
+		try {
+			const file = resolver(path.join(dir, dirName), dotless);
+			if (file) {
+				return {
+					cwd: current,
+					dir: path.join(dir, dirName),
+					path: file,
+				};
+			}
+		} catch {}
+
+		return null;
+	};
+
+	// Walk up directories until root
+	while (true) {
+		const fileObject = test(current);
+		if (fileObject) {
+			return fileObject;
 		}
 
-		// Does X/.dir/file.ext exist?
-		try {
-			return resolve(x, dir, dotless);
-		} catch (e) {
+		const parent = path.dirname(current);
+		if (parent === current) {
+			break;
 		}
+
+		current = parent;
 	}
 
-	// Walk up path.
-	while (i--) {
-		fileObj = test(cwd.join(PATH_SEP));
-
-		// istanbul ignore next
-		if (fileObj) {
-			return fileObj;
-		}
-
-		// Change X to parent.
-		cwd.pop();
-	}
-
-	// Check in home.
-	if (options.home || options.home === null || options.home === undefined) {
-		fileObj = test(home);
-
-		// istanbul ignore next
-		if (fileObj) {
-			return fileObj;
+	// Check home directory if enabled (default true)
+	if (options.home !== false) {
+		const fileObject = test(homedir());
+		if (fileObject) {
+			return fileObject;
 		}
 	}
 
 	return null;
 }
 
-function findConfigRead(filename, options) {
-	if (!filename) {
+/**
+ * Return the full path of the found config
+ */
+function findConfig(filename, options) {
+	const configObject = findConfigObject(filename, options);
+	return configObject?.path ?? null;
+}
+
+/**
+ * Read the contents of a found config
+ */
+function findConfigRead(filename, options = {}) {
+	const filepath = findConfig(filename, options);
+	if (!filepath) {
 		return null;
 	}
 
-	options = options || {};
-
-	var filepath = findConfig(filename, options);
-
-	return filepath && fsReadFileSync(filepath, {
-		encoding: options.encoding || DEFAULT_ENC,
-		flag: options.flag
+	return fs.readFileSync(filepath, {
+		encoding: options.encoding ?? DEFAULT_ENC,
+		flag: options.flag,
 	});
 }
 
-function findConfigRequire(filename, options) {
-	if (!filename) {
+/**
+ * Require a JS module as config
+ */
+function findConfigRequire(filename, options = {}) {
+	options = {...options, module: true};
+	const filepath = findConfig(filename, options);
+	if (!filepath) {
 		return null;
 	}
 
-	options = options || {};
-	options.module = true;
-
-	var filepath = findConfig(filename, options);
-
-	return filepath && require(filepath);
+	return require(filepath);
 }
 
-module.exports = findConfig;
-module.exports.obj = findConfigObj;
-module.exports.read = findConfigRead;
-module.exports.require = findConfigRequire;
+export default findConfig;
+export {findConfigObject, findConfigRead, findConfigRequire};

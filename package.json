@@ -6,7 +6,7 @@
   "scripts": {
     "bench": "node test/benchmark",
     "coveralls": "nyc report -r text-lcov | coveralls",
-    "pretest": "xo src/*.js test/**/*.js",
+    "pretest": "xo --prettier src/*.js ",
     "test": "nyc -r html -r text ava -v test/*.js",
     "watch": "watch 'npm test' src test -du --wait=5"
   },
@@ -29,22 +29,19 @@
     "url": "https://github.com/shannonmoeller/find-config/issues"
   },
   "homepage": "https://github.com/shannonmoeller/find-config",
-  "dependencies": {
-    "user-home": "^2.0.0"
-  },
   "devDependencies": {
-    "ava": "^0.11.0",
+    "ava": "^6.4.1",
     "benchmark": "^2.1.0",
     "coveralls": "^2.11.6",
-    "expect": "^1.14.0",
-    "findup-sync": "^0.3.0",
-    "look-up": "^0.8.3",
-    "microtime": "^2.0.0",
-    "nyc": "^5.6.0",
-    "watch": "^0.17.1",
-    "xo": "^0.12.1"
+    "findup-sync": "^5.0.0",
+    "look-up": "^0.8.2",
+    "mitata": "^1.0.34",
+    "nyc": "^17.1.0",
+    "prettier": "^3.8.1",
+    "watch": "^1.0.2",
+    "xo": "^1.2.3"
   },
   "engines": {
-    "node": ">= 0.12"
+    "node": ">= 22"
   }
 }
